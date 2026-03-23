@@ -160,6 +160,57 @@ class Outreach:
             items = [item.strip() for item in items[1:]]
             return items
 
+    def export_leads_for_review(self, source_file: str, review_file: str) -> int:
+        """
+        Exports scraped leads to a review-friendly CSV without sending emails.
+
+        Args:
+            source_file (str): Scraper output CSV
+            review_file (str): Manual review CSV output path
+
+        Returns:
+            count (int): Number of leads exported
+        """
+        exported_rows = []
+
+        with open(source_file, "r", newline="", errors="ignore") as csvfile:
+            reader = csv.reader(csvfile)
+            header = next(reader, [])
+
+            for row in reader:
+                if not row:
+                    continue
+
+                company_name = row[0] if len(row) > 0 else ""
+                website = next((value for value in row if value.startswith("http")), "")
+                scraped_email = next((value for value in row if "@" in value), "")
+
+                exported_rows.append(
+                    {
+                        "company_name": company_name,
+                        "website": website,
+                        "email": scraped_email,
+                        "status": "review",
+                        "notes": "",
+                        "raw_row": " | ".join(value.strip() for value in row if value.strip()),
+                    }
+                )
+
+        with open(review_file, "w", newline="", encoding="utf-8") as csvfile:
+            fieldnames = [
+                "company_name",
+                "website",
+                "email",
+                "status",
+                "notes",
+                "raw_row",
+            ]
+            writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+            writer.writeheader()
+            writer.writerows(exported_rows)
+
+        return len(exported_rows)
+
     def set_email_for_website(self, index: int, website: str, output_file: str):
         """Extracts an email address from a website and updates a CSV file with it.
 
@@ -219,6 +270,7 @@ class Outreach:
             f.write(self.niche)
 
         output_path = get_results_cache_path()
+        review_output_path = get_outreach_review_cache_path()
         message_subject = get_outreach_message_subject()
         message_body = get_outreach_message_body_file()
 
@@ -238,59 +290,10 @@ class Outreach:
         items = self.get_items_from_file(output_path)
         success(f" => Scraped {len(items)} items.")
 
+        exported_count = self.export_leads_for_review(output_path, review_output_path)
+        success(f" => Exported {exported_count} leads for manual review to {review_output_path}")
+
         # Remove the niche file
         os.remove("niche.txt")
 
-        time.sleep(2)
-
-        # Create a yagmail SMTP client outside the loop
-        yag = yagmail.SMTP(
-            user=self.email_creds["username"],
-            password=self.email_creds["password"],
-            host=self.email_creds["smtp_server"],
-            port=self.email_creds["smtp_port"],
-        )
-
-        # Get the email for each business
-        for index, item in enumerate(items, start=1):
-            try:
-                # Check if the item"s website is valid
-                website = item.split(",")
-                website = [w for w in website if w.startswith("http")]
-                website = website[0] if len(website) > 0 else ""
-                if website != "":
-                    test_r = requests.get(website)
-                    if test_r.status_code == 200:
-                        self.set_email_for_website(index, website, output_path)
-
-                        # Send emails using the existing SMTP connection
-                        receiver_email = item.split(",")[-1]
-
-                        if "@" not in receiver_email:
-                            warning(f" => No email provided. Skipping...")
-                            continue
-
-                        company_name = item.split(",")[0]
-                        subject = message_subject.replace(
-                            "{{COMPANY_NAME}}", company_name
-                        )
-                        body = (
-                            open(message_body, "r")
-                            .read()
-                            .replace("{{COMPANY_NAME}}", company_name)
-                        )
-
-                        info(f" => Sending email to {receiver_email}...")
-
-                        yag.send(
-                            to=receiver_email,
-                            subject=subject,
-                            contents=body,
-                        )
-
-                        success(f" => Sent email to {receiver_email}")
-                    else:
-                        warning(f" => Website {website} is invalid. Skipping...")
-            except Exception as err:
-                error(f" => Error: {err}...")
-                continue
+        info(" => Manual review mode is enabled. No outreach emails were sent.")

@@ -191,3 +191,12 @@ def get_results_cache_path() -> str:
         path (str): The path to the results cache folder
     """
     return os.path.join(get_cache_path(), 'scraper_results.csv')
+
+def get_outreach_review_cache_path() -> str:
+    """
+    Gets the path to the manual outreach review CSV file.
+
+    Returns:
+        path (str): The path to the review CSV
+    """
+    return os.path.join(get_cache_path(), 'outreach_review.csv')
