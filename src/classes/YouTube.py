@@ -15,12 +15,8 @@ from status import *
 from uuid import uuid4
 from constants import *
 from typing import List
-from moviepy.editor import *
 from termcolor import colored
-from selenium_firefox import *
 from selenium import webdriver
-from moviepy.video.fx.all import crop
-from moviepy.config import change_settings
 from selenium.webdriver.common.by import By
 from selenium.webdriver.firefox.service import Service
 from selenium.webdriver.firefox.options import Options
@@ -28,8 +24,87 @@ from moviepy.video.tools.subtitles import SubtitlesClip
 from webdriver_manager.firefox import GeckoDriverManager
 from datetime import datetime
 
-# Set ImageMagick Path
-change_settings({"IMAGEMAGICK_BINARY": get_imagemagick_path()})
+try:
+    from moviepy import (
+        AudioFileClip,
+        CompositeAudioClip,
+        CompositeVideoClip,
+        ImageClip,
+        TextClip,
+        afx,
+        concatenate_videoclips,
+    )
+except ImportError:
+    from moviepy.editor import (
+        AudioFileClip,
+        CompositeAudioClip,
+        CompositeVideoClip,
+        ImageClip,
+        TextClip,
+        afx,
+        concatenate_videoclips,
+    )
+
+
+def _clip_with_fps(clip, fps: int):
+    if hasattr(clip, "with_fps"):
+        return clip.with_fps(fps)
+    return clip.set_fps(fps)
+
+
+def _clip_crop(clip, **kwargs):
+    if hasattr(clip, "cropped"):
+        return clip.cropped(**kwargs)
+
+    from moviepy.video.fx.all import crop
+
+    return crop(clip, **kwargs)
+
+
+def _clip_resize(clip, size):
+    if hasattr(clip, "resized"):
+        return clip.resized(new_size=size)
+    return clip.resize(size)
+
+
+def _clip_set_audio(clip, audio_clip):
+    if hasattr(clip, "with_audio"):
+        return clip.with_audio(audio_clip)
+    return clip.set_audio(audio_clip)
+
+
+def _clip_set_duration(clip, duration: float):
+    if hasattr(clip, "with_duration"):
+        return clip.with_duration(duration)
+    return clip.set_duration(duration)
+
+
+def _clip_set_position(clip, position):
+    if hasattr(clip, "with_position"):
+        return clip.with_position(position)
+    return clip.set_pos(position)
+
+
+def _clip_adjust_volume(clip, factor: float):
+    if hasattr(clip, "with_effects") and hasattr(afx, "MultiplyVolume"):
+        return clip.with_effects([afx.MultiplyVolume(factor)])
+    return clip.fx(afx.volumex, factor)
+
+
+def _configure_imagemagick() -> None:
+    imagemagick_path = get_imagemagick_path()
+    if not imagemagick_path or "Path to magick.exe" in imagemagick_path:
+        return
+
+    try:
+        from moviepy.config import change_settings
+
+        change_settings({"IMAGEMAGICK_BINARY": imagemagick_path})
+    except Exception:
+        os.environ["IMAGEMAGICK_BINARY"] = imagemagick_path
+
+
+_configure_imagemagick()
 
 
 class YouTube:
@@ -563,16 +638,20 @@ class YouTube:
         req_dur = max_duration / len(self.images)
 
         # Make a generator that returns a TextClip when called with consecutive
-        generator = lambda txt: TextClip(
-            txt,
-            font=os.path.join(get_fonts_dir(), get_font()),
-            fontsize=100,
-            color="#FFFF00",
-            stroke_color="black",
-            stroke_width=5,
-            size=(1080, 1920),
-            method="caption",
-        )
+        def generator(txt):
+            kwargs = {
+                "font": os.path.join(get_fonts_dir(), get_font()),
+                "color": "#FFFF00",
+                "stroke_color": "black",
+                "stroke_width": 5,
+                "size": (1080, 1920),
+                "method": "caption",
+            }
+
+            try:
+                return TextClip(text=txt, font_size=100, **kwargs)
+            except TypeError:
+                return TextClip(txt, fontsize=100, **kwargs)
 
         print(colored("[+] Combining images...", "blue"))
 
@@ -583,14 +662,14 @@ class YouTube:
             for image_path in self.images:
                 clip = ImageClip(image_path)
                 clip.duration = req_dur
-                clip = clip.set_fps(30)
+                clip = _clip_with_fps(clip, 30)
 
                 # Not all images are same size,
                 # so we need to resize them
                 if round((clip.w / clip.h), 4) < 0.5625:
                     if get_verbose():
                         info(f" => Resizing Image: {image_path} to 1080x1920")
-                    clip = crop(
+                    clip = _clip_crop(
                         clip,
                         width=clip.w,
                         height=round(clip.w / 0.5625),
@@ -600,14 +679,14 @@ class YouTube:
                 else:
                     if get_verbose():
                         info(f" => Resizing Image: {image_path} to 1920x1080")
-                    clip = crop(
+                    clip = _clip_crop(
                         clip,
                         width=round(0.5625 * clip.h),
                         height=clip.h,
                         x_center=clip.w / 2,
                         y_center=clip.h / 2,
                     )
-                clip = clip.resize((1080, 1920))
+                clip = _clip_resize(clip, (1080, 1920))
 
                 # FX (Fade In)
                 # clip = clip.fadein(2)
@@ -616,7 +695,7 @@ class YouTube:
                 tot_dur += clip.duration
 
         final_clip = concatenate_videoclips(clips)
-        final_clip = final_clip.set_fps(30)
+        final_clip = _clip_with_fps(final_clip, 30)
         random_song = choose_random_song()
 
         subtitles = None
@@ -624,18 +703,18 @@ class YouTube:
             subtitles_path = self.generate_subtitles(self.tts_path)
             equalize_subtitles(subtitles_path, 10)
             subtitles = SubtitlesClip(subtitles_path, generator)
-            subtitles.set_pos(("center", "center"))
+            subtitles = _clip_set_position(subtitles, ("center", "center"))
         except Exception as e:
             warning(f"Failed to generate subtitles, continuing without subtitles: {e}")
 
-        random_song_clip = AudioFileClip(random_song).set_fps(44100)
+        random_song_clip = _clip_with_fps(AudioFileClip(random_song), 44100)
 
         # Turn down volume
-        random_song_clip = random_song_clip.fx(afx.volumex, 0.1)
-        comp_audio = CompositeAudioClip([tts_clip.set_fps(44100), random_song_clip])
+        random_song_clip = _clip_adjust_volume(random_song_clip, 0.1)
+        comp_audio = CompositeAudioClip([_clip_with_fps(tts_clip, 44100), random_song_clip])
 
-        final_clip = final_clip.set_audio(comp_audio)
-        final_clip = final_clip.set_duration(tts_clip.duration)
+        final_clip = _clip_set_audio(final_clip, comp_audio)
+        final_clip = _clip_set_duration(final_clip, tts_clip.duration)
 
         if subtitles is not None:
             final_clip = CompositeVideoClip([final_clip, subtitles])

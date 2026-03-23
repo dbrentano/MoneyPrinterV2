@@ -1,18 +1,23 @@
 from termcolor import colored
 
+
+def _prefix(marker: str, show_marker: bool) -> str:
+    return f"{marker} " if show_marker else ""
+
+
 def error(message: str, show_emoji: bool = True) -> None:
     """
     Prints an error message.
 
     Args:
         message (str): The error message
-        show_emoji (bool): Whether to show the emoji
+        show_emoji (bool): Whether to show the prefix marker
 
     Returns:
         None
     """
-    emoji = "❌" if show_emoji else ""
-    print(colored(f"{emoji} {message}", "red"))
+    print(colored(f"{_prefix('[x]', show_emoji)}{message}", "red"))
+
 
 def success(message: str, show_emoji: bool = True) -> None:
     """
@@ -20,13 +25,13 @@ def success(message: str, show_emoji: bool = True) -> None:
 
     Args:
         message (str): The success message
-        show_emoji (bool): Whether to show the emoji
+        show_emoji (bool): Whether to show the prefix marker
 
     Returns:
         None
     """
-    emoji = "✅" if show_emoji else ""
-    print(colored(f"{emoji} {message}", "green"))
+    print(colored(f"{_prefix('[+]', show_emoji)}{message}", "green"))
+
 
 def info(message: str, show_emoji: bool = True) -> None:
     """
@@ -34,13 +39,13 @@ def info(message: str, show_emoji: bool = True) -> None:
 
     Args:
         message (str): The info message
-        show_emoji (bool): Whether to show the emoji
+        show_emoji (bool): Whether to show the prefix marker
 
     Returns:
         None
     """
-    emoji = "ℹ️" if show_emoji else ""
-    print(colored(f"{emoji} {message}", "magenta"))
+    print(colored(f"{_prefix('[i]', show_emoji)}{message}", "magenta"))
+
 
 def warning(message: str, show_emoji: bool = True) -> None:
     """
@@ -48,13 +53,13 @@ def warning(message: str, show_emoji: bool = True) -> None:
 
     Args:
         message (str): The warning message
-        show_emoji (bool): Whether to show the emoji
+        show_emoji (bool): Whether to show the prefix marker
 
     Returns:
         None
     """
-    emoji = "⚠️" if show_emoji else ""
-    print(colored(f"{emoji} {message}", "yellow"))
+    print(colored(f"{_prefix('[!]', show_emoji)}{message}", "yellow"))
+
 
 def question(message: str, show_emoji: bool = True) -> str:
     """
@@ -62,10 +67,9 @@ def question(message: str, show_emoji: bool = True) -> str:
 
     Args:
         message (str): The question message
-        show_emoji (bool): Whether to show the emoji
+        show_emoji (bool): Whether to show the prefix marker
 
     Returns:
         user_input (str): The user's input
     """
-    emoji = "❓" if show_emoji else ""
-    return input(colored(f"{emoji} {message}", "magenta"))
+    return input(colored(f"{_prefix('[?]', show_emoji)}{message}", "magenta"))
